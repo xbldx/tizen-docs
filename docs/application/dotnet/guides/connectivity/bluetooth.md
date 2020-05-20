@@ -306,11 +306,10 @@ To find remote Bluetooth devices, you can either discover them and bond with the
 
     To remove a device from the bonded list, call the `DestroyBond()` method of the `Tizen.Network.Bluetooth.BluetoothDevice` class.
 
-
 > **Note**   
 > A Bluetooth device must be in a discovery mode (visible) for other devices to find it and connect to it. If you want other devices to find your device, you must set the device to be visible.
 
-
+<a name="visibility_control"></a>
 To manage the device visibility and enable discovery:
 
 1.  Check the current visibility of your device:
@@ -552,10 +551,10 @@ To connect to other devices:
 
 To share data between devices after establishing a connection:
 
-1.  To write data, use the `SendData()` method of the [Tizen.Network.Bluetooth.IBluetoothClientSocket](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.IBluetoothClientSocket.html) interface, which accepts the data as a string parameter:
+1.  To write data, use the `SendData()` method of the [Tizen.Network.Bluetooth.IBluetoothClientSocket](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.IBluetoothClientSocket.html) interface, which accepts the data as a byte[] parameter:
 
     ```
-    private static string dataFromClient = "Test from client";
+    private static byte[] dataFromClient = { 0xAB, 0xCD, 0xEF };
     /// The client is created after successful socket connection with server device
     Client.SendData(dataFromClient);
     ```
@@ -564,7 +563,7 @@ To share data between devices after establishing a connection:
 
     Register the event handler for the `DataReceived` event of the [Tizen.Network.Bluetooth.IBluetoothServerSocket](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.IBluetoothServerSocket.html) interface.
 
-    The received data is passed to the event handler as an instance of the [Tizen.Network.Bluetooth.SocketData](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.SocketData.html) class, which contains the socket file descriptor, the size of the received data in bytes, and the data itself as a string.
+    The received data is passed to the event handler as an instance of the [Tizen.Network.Bluetooth.SocketData](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.SocketData.html) class, which contains the socket file descriptor, the size of the received data in bytes, and the data itself as a byte[].
 
     ```
     public static IBluetoothServerSocket Socket = null;
@@ -572,7 +571,7 @@ To share data between devices after establishing a connection:
     public static void DataReceivedServerEventHandler(object sender, SocketDataReceivedEventArgs args)
     {
         BluetoothSetup.Data = args.Data;
-        LogUtils.Write(LogUtils.DEBUG, LogUtils.TAG, "DataReceived in client: " + args.Data.Data);
+        LogUtils.Write(LogUtils.DEBUG, LogUtils.TAG, "DataReceived in client: " + string.Format("0X{0:X2} ", BluetoothSetup.Data.ByteData[0]) + string.Format("0X{0:X2} ", BluetoothSetup.Data.ByteData[1]) + string.Format("0X{0:X2} ", BluetoothSetup.Data.ByteData[2]));
         flagServerDataReceived = true;
     }
     /// The socket is created on the server device, after the socket connection is accepted from the client device
@@ -605,7 +604,7 @@ To disconnect from a device:
 
 Before you can use the Bluetooth GATT functionalities, you must successfully connect to the BLE target.
 
-Find the target device and connect to it with the `GattConnect()` method of the [Tizen.Network.Bluetooth.BluetoothLeDevice](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.BluetoothLeDevice.html) class:
+Find the target device and connect to it with the `CreateClient()` and `ConnectAsync()` methods of the [Tizen.Network.Bluetooth.BluetoothGattClient](https://developer.tizen.org/dev-guide/csapi/api/Tizen.Network.Bluetooth.BluetoothGattClient.html) class:
 
 ```
 public static BluetoothLeDevice leDevice = null;
@@ -623,19 +622,20 @@ if (leDevice == null)
     BluetoothAdapter.StopLeScan();
     await Task.Delay(5000);
 }
-leDevice.GattConnectionStateChanged += LeDevice_GattConnectionStateChanged;
-client = leDevice.GattConnect(false);
+client = BluetoothGattClient.CreateClient(leDevice.RemoteAddress);
+client.ConnectionStateChanged += GattClient_ConnectionStateChanged;
+await client.ConnectAsync(false);
 ```
 <a name="gatt"></a>
 ## Managing GATT Client Operations
 
 To perform GATT client operations:
 
-1.  Define a connection state change event handler and register it for the `GattConnectionStateChanged` event of the [Tizen.Network.Bluetooth.BluetoothLeDevice](https://samsung.github.io/TizenFX/latest/api/Tizen.Network.Bluetooth.BluetoothLeDevice.html) class:
+1.  Define a connection state change event handler and register it for the `ConnectionStateChanged` event of the [Tizen.Network.Bluetooth.BluetoothGattClient](https://developer.tizen.org/dev-guide/csapi/api/Tizen.Network.Bluetooth.BluetoothGattClient.html) class:
 
     ```
     /// Register for GATT connection event handler
-    public static void LeDevice_GattConnectionStateChanged(object sender, GattConnectionStateChangedEventArgs e)
+    public static void GattClient_ConnectionStateChanged(object sender, GattConnectionStateChangedEventArgs e)
     {
         if (e.Result != (int)BluetoothError.None)
         }
@@ -655,13 +655,13 @@ To perform GATT client operations:
         }
     }
 
-    leDevice.GattConnectionStateChanged += LeDevice_GattConnectionStateChanged;
+    client.ConnectionStateChanged += GattClient_ConnectionStateChanged;
     ```
 
 2.  Connect to the BLE target device:
 
     ```
-    client = leDevice.GattConnect(false);
+    await client.ConnectAsync(false);
     ```
 
 3.  Retrieve the address of the remote device:
@@ -765,14 +765,14 @@ To perform GATT client operations:
         charc.ValueChanged -= Charc_ValueChanged;
         ```
 
-8.  When you no longer need the client, deregister the connection state change event handler, and disconnect from the remote device using the `GattDisconnect()` method of the `Tizen.Network.Bluetooth.BluetoothLeDevice` class:
+8.  When you no longer need the client, deregister the connection state change event handler, and disconnect from the remote device using the `DisconnectAsync()` method of the `Tizen.Network.Bluetooth.BluetoothGattClient` class:
 
     ```
     /// Deregister the GATT connection state change event handler
-    leDevice.GattConnectionStateChanged -= LeDevice_GattConnectionStateChanged;
+    client.ConnectionStateChanged -= GattClient_ConnectionStateChanged;
 
     /// Disconnect from the client
-    leDevice.GattDisconnect();
+    client.DisconnectAsync();
     ```
 <a name="gatt_getter"></a>
 ## Managing Common GATT Getter Operations
@@ -1047,13 +1047,13 @@ To discover nearby LE devices, perform an LE scan operation:
         address = leDevice.RemoteAddress;
         rssi = leDevice.Rssi;
 
-        txLevel = leDevice.TxPowerLevel;
+        txLevel = leDevice.GetTxPowerLevel(BluetoothLePacketType.BluetoothLeAdvertisingPacket);
         if (txLevel != -1)
         {
-            Assert.IsInstanceOf<int>(leDevice.TxPowerLevel, "BluetoothLeDevice TxPowerLevel is not valid");
+            Assert.IsInstanceOf<int>(txLevel, "BluetoothLeDevice TxPowerLevel is not valid");
         }
 
-        IEnumerable<string> ssuuid = leDevice.ServiceSolictationUuid;
+        IEnumerable<string> ssuuid = leDevice.GetServiceSolictationUuid(BluetoothLePacketType.BluetoothLeAdvertisingPacket);
         if (ssuuid != null)
         {
             foreach (string uuid in ssuuid)
@@ -1068,7 +1068,7 @@ To discover nearby LE devices, perform an LE scan operation:
             LogUtils.Write(LogUtils.DEBUG, LogUtils.TAG, "Found Scan Data of length : " + scanDataInfo.Length);
         }
 
-        IEnumerable<string> svcuuid = leDevice.ServiceUuid;
+        IEnumerable<string> svcuuid = leDevice.GetServiceUuid(BluetoothLePacketType.BluetoothLeAdvertisingPacket);
         if (svcuuid != null)
         {
             foreach (string uuid in svcuuid)
@@ -1077,7 +1077,7 @@ To discover nearby LE devices, perform an LE scan operation:
             }
         }
 
-        IEnumerable<BluetoothLeServiceData> serviceList = leDevice.GetServiceDataList();
+        IEnumerable<BluetoothLeServiceData> serviceList = leDevice.GetServiceDataList(BluetoothLePacketType.BluetoothLeAdvertisingPacket);
         if (serviceList != null)
         {
             foreach (BluetoothLeServiceData data in serviceList)
@@ -1085,14 +1085,6 @@ To discover nearby LE devices, perform an LE scan operation:
                 LogUtils.Write(LogUtils.DEBUG, LogUtils.TAG, "Retrieved service data list UUID : " + data.ServiceUuid + " length is " + data.ServiceDataLength);
             }
         }
-
-        leDevice.PacketType = BluetoothLePacketType.BluetoothLeScanResponsePacket;
-        PacketType = leDevice.PacketType;
-        Assert.AreEqual(BluetoothLePacketType.BluetoothLeScanResponsePacket, PacketType);
-
-        leDevice.PacketType = BluetoothLePacketType.BluetoothLeAdvertisingPacket;
-        PacketType = leDevice.PacketType;
-        Assert.AreEqual(BluetoothLePacketType.BluetoothLeAdvertisingPacket, PacketType);
     }
     ```
 <a name="add_adv_data"></a>
